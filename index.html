@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Check a receipt · Thrasu Books</title>
+<!-- The page a receipt's QR code opens. Anyone can check a receipt without
+     signing in; it calls verify_receipt, answer_receipt and report_problem
+     (migration 0018) with the app's publishable key. Source: public/check.html in the app. -->
+<style>
+  :root { --page:#F7F8F5; --card:#fff; --ink:#173404; --muted:#6B7261; --green:#3B6D11; --inBg:#EAF3DE; --inFg:#27500A; --outBg:#FCEBEB; --outFg:#791F1F; --line:#E3E6DC; }
+  @media (prefers-color-scheme: dark) { :root { --page:#111410; --card:#1B1F18; --ink:#E6EEDC; --muted:#A2AA97; --green:#7DB33F; --inBg:#223318; --inFg:#AFD885; --outBg:#3A1C1C; --outFg:#F2A3A3; --line:#2F362A; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--page); color:var(--ink); font:16px/1.45 system-ui, sans-serif; }
+  header { background:var(--green); color:#fff; padding:18px 16px; border-radius:0 0 22px 22px; }
+  header h1 { margin:0; font-size:19px; }
+  main { max-width:520px; margin:0 auto; padding:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px; margin-top:14px; text-align:center; }
+  .ok { background:var(--inBg); color:var(--inFg); border:none; }
+  .bad { background:var(--outBg); color:var(--outFg); border:none; }
+  .big { font-size:28px; font-weight:700; margin:6px 0; }
+  button { font:inherit; border-radius:12px; padding:12px 14px; border:1px solid var(--green); background:var(--card); color:var(--green); width:100%; margin-top:8px; cursor:pointer; }
+  button.primary { background:var(--green); color:#fff; }
+  textarea, input { font:inherit; width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; margin-top:8px; background:var(--card); color:var(--ink); }
+  .muted { color:var(--muted); font-size:14px; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<header><h1>Check a receipt</h1><div style="opacity:.8;font-size:13px">Thrasu Books</div></header>
+<main>
+  <div id="status" class="card muted">Checking…</div>
+  <div id="ask" class="card" hidden>
+    <div>Did you get this receipt for this amount?</div>
+    <button class="primary" id="yes">Yes, this is right</button>
+    <button id="no">No, something is wrong</button>
+  </div>
+  <div id="report" class="card" hidden style="text-align:left">
+    <b>Tell the trust privately</b>
+    <div class="muted">Only the trust's admin and auditor see this.</div>
+    <textarea id="text" rows="4" placeholder="I gave ₹1,000 but the receipt says ₹100"></textarea>
+    <input id="name" placeholder="Your name (optional)">
+    <input id="phone" placeholder="Your phone (optional)">
+    <button class="primary" id="send">Send</button>
+  </div>
+  <div id="thanks" class="card ok" hidden>Thank you. The trust has been told.</div>
+</main>
+<script>
+const SUPABASE_URL = 'https://pclzyqisytqqzhrbhshu.supabase.co';
+const KEY = 'sb_publishable_n-zKVSpZATWFRtlR5RxDBw_EKFpECVP';
+const token = new URLSearchParams(location.search).get('t') || '';
+const $ = (id) => document.getElementById(id);
+const rupees = (n) => '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+async function rpc(name, params) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
+    method: 'POST',
+    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+function show(ok, title, lines) {
+  const s = $('status');
+  s.className = 'card ' + (ok ? 'ok' : 'bad');
+  s.replaceChildren();
+  const icon = document.createElement('div'); icon.style.fontSize = '42px'; icon.textContent = ok ? '✅' : '⚠️';
+  const h = document.createElement('div'); h.className = 'big'; h.textContent = title;
+  s.append(icon, h);
+  for (const l of lines) { const d = document.createElement('div'); d.textContent = l; s.append(d); }
+}
+
+async function check() {
+  if (!/^[0-9a-f]{32}$/.test(token)) { show(false, 'Not a receipt code', ['Scan the QR code printed on the receipt.']); $('report').hidden = true; return; }
+  try {
+    const rows = await rpc('verify_receipt', { p_token: token });
+    const r = rows[0];
+    if (!r) { show(false, 'Not in the books', ['This receipt is not in any trust\'s books. It may be fake.']); return; }
+    if (r.status !== 'final') { show(false, 'Not a final entry', [`${r.trust} · No. ${r.doc_no || '—'} is ${r.status === 'pending' ? 'waiting for approval' : 'rejected'}.`]); $('report').hidden = false; return; }
+    const d = new Date(r.voucher_date);
+    show(true, 'Genuine receipt', [r.trust, `No. ${r.doc_no || '—'} · ${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`, rupees(r.amount), r.party ? `From ${r.party}` : '']);
+    if (r.kind === 'receipt') $('ask').hidden = false;
+  } catch (e) {
+    show(false, 'Could not check', ['Check your internet and open the link again.']);
+  }
+}
+
+$('yes').onclick = async () => { await rpc('answer_receipt', { p_token: token, p_ok: true, p_note: null }).catch(() => {}); $('ask').hidden = true; $('thanks').hidden = false; };
+$('no').onclick = () => { $('ask').hidden = true; $('report').hidden = false; };
+$('send').onclick = async () => {
+  const text = $('text').value.trim();
+  if (!text) { $('text').focus(); return; }
+  try {
+    // A "no" from the donor is also recorded on the receipt.
+    await rpc('answer_receipt', { p_token: token, p_ok: false, p_note: text }).catch(() => {});
+    await rpc('report_problem', { p_token: token, p_code: null, p_text: text, p_name: $('name').value, p_phone: $('phone').value });
+    $('report').hidden = true; $('thanks').hidden = false;
+  } catch (e) { alert('Could not send. Please try again.'); }
+};
+check();
+</script>
+</body>
+</html>
