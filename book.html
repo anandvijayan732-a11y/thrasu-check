@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Book online · Thrasu Books</title>
+<!-- The public booking page (idea 9 B). The trust shares book.html?t=<token>
+     from Booking settings. Anyone can book without signing in; it calls
+     public_booking_page, public_book and public_booking_status (migration
+     0025) with the app's publishable key. Online next to check.html at
+     https://anandvijayan732-a11y.github.io/thrasu-check/book.html (GitHub
+     repository anandvijayan732-a11y/thrasu-check); update it there too. -->
+<style>
+  :root { --page:#F7F8F5; --card:#fff; --ink:#173404; --muted:#6B7261; --green:#3B6D11; --inBg:#EAF3DE; --inFg:#27500A; --outBg:#FCEBEB; --outFg:#791F1F; --warnBg:#FAEEDA; --warnFg:#633806; --line:#E3E6DC; }
+  @media (prefers-color-scheme: dark) { :root { --page:#111410; --card:#1B1F18; --ink:#E6EEDC; --muted:#A2AA97; --green:#7DB33F; --inBg:#223318; --inFg:#AFD885; --outBg:#3A1C1C; --outFg:#F2A3A3; --warnBg:#3A2C14; --warnFg:#F0C987; --line:#2F362A; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--page); color:var(--ink); font:16px/1.45 system-ui, sans-serif; }
+  header { background:var(--green); color:#fff; padding:18px 16px; border-radius:0 0 22px 22px; }
+  header h1 { margin:0; font-size:19px; }
+  main { max-width:520px; margin:0 auto; padding:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-top:14px; }
+  .ok { background:var(--inBg); color:var(--inFg); border:none; }
+  .bad { background:var(--outBg); color:var(--outFg); border:none; }
+  .warn { background:var(--warnBg); color:var(--warnFg); border:none; }
+  .center { text-align:center; }
+  .big { font-size:26px; font-weight:700; margin:4px 0; }
+  label { display:block; margin-top:12px; font-size:14px; color:var(--muted); }
+  input, textarea { font:inherit; width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; margin-top:4px; background:var(--card); color:var(--ink); }
+  button, a.btn { font:inherit; display:block; text-align:center; text-decoration:none; border-radius:12px; padding:12px 14px; border:1px solid var(--green); background:var(--card); color:var(--green); width:100%; margin-top:10px; cursor:pointer; }
+  button.primary, a.btn.primary { background:var(--green); color:#fff; }
+  button:disabled { opacity:.6; }
+  .services { display:grid; gap:8px; margin-top:6px; }
+  .service { text-align:left; margin:0; color:var(--ink); border-color:var(--line); }
+  .service.on { border:2px solid var(--green); background:var(--inBg); }
+  .service small { display:block; color:var(--muted); }
+  .row { display:flex; align-items:center; gap:10px; }
+  .row button { width:48px; margin:0; padding:8px; }
+  .qty { font-size:20px; font-weight:700; min-width:28px; text-align:center; }
+  .muted { color:var(--muted); font-size:14px; }
+  .err { color:var(--outFg); margin-top:8px; }
+  .upi { font-weight:700; word-break:break-all; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<header><h1 id="trust">Book online</h1><div style="opacity:.8;font-size:13px">Book ahead · Thrasu Books</div></header>
+<main>
+  <div id="status" class="card center muted">Loading…</div>
+
+  <form id="form" hidden novalidate>
+    <div class="card">
+      <b>What would you like to book?</b>
+      <div id="services" class="services"></div>
+      <div id="serviceNote" class="muted" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <label for="date" style="margin-top:0">Date</label>
+      <input type="date" id="date">
+      <div id="dateInfo" class="muted" style="margin-top:6px"></div>
+      <label>How many</label>
+      <div class="row">
+        <button type="button" id="minus">−</button>
+        <span class="qty" id="qty">1</span>
+        <button type="button" id="plus">+</button>
+      </div>
+      <label for="name">Name</label>
+      <input id="name" autocomplete="name" placeholder="For whom">
+      <label for="phone">Phone number</label>
+      <input id="phone" type="tel" autocomplete="tel" placeholder="10-digit mobile">
+      <label for="note">Note (optional)</label>
+      <input id="note" placeholder="Star, intention, time">
+    </div>
+
+    <div id="pay" class="card" hidden>
+      <div class="muted">To pay</div>
+      <div class="big" id="total"></div>
+      <div class="muted">Pay the trust by UPI first, then type the UPI reference number below.</div>
+      <div style="margin-top:8px">UPI ID: <span class="upi" id="upiId"></span></div>
+      <a class="btn primary" id="upiLink">Pay with a UPI app</a>
+      <button type="button" id="copyUpi">Copy UPI ID</button>
+      <label for="ref">UPI reference number</label>
+      <input id="ref" inputmode="numeric" placeholder="12-digit number from your UPI app">
+    </div>
+    <div id="noUpi" class="card warn" hidden>The trust has not added its UPI ID yet, so paid bookings can't be made online. Please call the office.</div>
+
+    <div id="error" class="err"></div>
+    <button class="primary" id="book" type="submit">Book</button>
+  </form>
+
+  <div id="done" class="card ok center" hidden>
+    <div style="font-size:42px">🙏</div>
+    <div class="big">Booking sent</div>
+    <div id="doneText"></div>
+    <div style="margin-top:8px">Your booking code</div>
+    <div class="big" id="code"></div>
+    <div class="muted" style="color:inherit">Keep this code. The office will check your payment and confirm.</div>
+    <button type="button" id="again">Book another</button>
+  </div>
+
+  <div id="lookup" class="card" hidden>
+    <b>Check my booking</b>
+    <input id="lookupCode" placeholder="Booking code, like 7F3A9C" maxlength="6" style="text-transform:uppercase">
+    <button type="button" id="lookupBtn">Check</button>
+    <div id="lookupResult" style="margin-top:8px"></div>
+  </div>
+</main>
+<script>
+const SUPABASE_URL = 'https://pclzyqisytqqzhrbhshu.supabase.co';
+const KEY = 'sb_publishable_n-zKVSpZATWFRtlR5RxDBw_EKFpECVP';
+const token = new URLSearchParams(location.search).get('t') || '';
+const $ = (id) => document.getElementById(id);
+const rupees = (n) => '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const dayOf = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const nice = (s) => { const d = dayOf(s); return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`; };
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+
+let page = null, service = null, qty = 1, now = null, today = null;
+
+async function rpc(name, params) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
+    method: 'POST',
+    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const text = await r.text();
+  if (!r.ok) {
+    let msg = '';
+    try { msg = JSON.parse(text).message || ''; } catch (_) {}
+    const e = new Error(msg || 'Could not connect.'); e.server = !!msg; throw e;
+  }
+  return text ? JSON.parse(text) : null;
+}
+
+function status(cls, title, lines) {
+  const s = $('status');
+  s.hidden = false;
+  s.className = 'card center ' + cls;
+  s.replaceChildren();
+  const h = document.createElement('div'); h.className = 'big'; h.textContent = title;
+  s.append(h);
+  for (const l of lines) { const d = document.createElement('div'); d.textContent = l; s.append(d); }
+}
+
+// Why this date can't be booked on the page, or ''. The server checks again.
+function problem(s, date) {
+  if (!date) return 'Choose a date.';
+  const d = dayOf(date);
+  if (d < today) return 'That date has passed.';
+  if (d > addDays(today, s.ahead_days)) return `Bookings open only ${s.ahead_days} days ahead.`;
+  const closed = page.closed.find((c) => c.on_date === date && (!c.service_id || c.service_id === s.id));
+  if (closed) return ('No bookings on that date. ' + (closed.reason || '')).trim();
+  if (page.full.some((f) => f.on_date === date && f.service_id === s.id)) return 'Full on that date.';
+  const [h, m] = s.closes_at.split(':').map(Number);
+  const closes = addDays(d, -s.closes_days_before); closes.setHours(h, m);
+  if (now > closes) return `Bookings for that date closed on ${closes.getDate()} ${months[closes.getMonth()]} at ${closes.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}.`;
+  return '';
+}
+
+function closingText(s) {
+  const [h, m] = s.closes_at.split(':').map(Number);
+  const t = new Date(2000, 0, 1, h, m).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+  const when = s.closes_days_before === 0 ? 'the same day' : s.closes_days_before === 1 ? 'the day before' : `${s.closes_days_before} days before`;
+  return `Bookings close at ${t} ${when}.`;
+}
+
+// The first date from today that this service can be booked.
+function firstOpen(s) {
+  for (let i = 0; i <= s.ahead_days; i++) {
+    const d = iso(addDays(today, i));
+    if (!problem(s, d)) return d;
+  }
+  return iso(today);
+}
+
+function refresh() {
+  for (const b of $('services').children) b.classList.toggle('on', b.dataset.id === service?.id);
+  $('serviceNote').textContent = service ? [service.note, closingText(service)].filter(Boolean).join(' ') : '';
+  const date = $('date').value;
+  const why = service ? problem(service, date) : '';
+  $('dateInfo').textContent = why || (date ? nice(date) : '');
+  $('dateInfo').style.color = why ? 'var(--outFg)' : '';
+  $('qty').textContent = qty;
+  const paid = service && service.price != null;
+  const total = paid ? service.price * qty : 0;
+  $('pay').hidden = !paid || !page.upi_id;
+  $('noUpi').hidden = !paid || !!page.upi_id;
+  $('book').disabled = !service || !!why || (paid && !page.upi_id);
+  if (paid && page.upi_id) {
+    $('total').textContent = rupees(total);
+    $('upiId').textContent = page.upi_id;
+    const note = `${service.name} ${date || ''}`.trim().slice(0, 50);
+    $('upiLink').href = `upi://pay?pa=${encodeURIComponent(page.upi_id)}&pn=${encodeURIComponent(page.name)}&am=${total.toFixed(2)}&cu=INR&tn=${encodeURIComponent(note)}`;
+  }
+}
+
+function pick(s) {
+  service = s;
+  qty = 1;
+  const d = $('date');
+  d.min = iso(today);
+  d.max = iso(addDays(today, s.ahead_days));
+  if (!d.value || problem(s, d.value)) d.value = firstOpen(s);
+  refresh();
+}
+
+async function load() {
+  if (!/^[0-9a-f]{32}$/.test(token)) { status('bad', 'Not a booking link', ['Ask the trust office for its booking link.']); return; }
+  try {
+    page = await rpc('public_booking_page', { p_token: token });
+  } catch (e) {
+    status('bad', 'Could not load', ['Check your internet and open the link again.']);
+    return;
+  }
+  if (!page) { status('bad', 'Online booking is closed', ['This booking page is not open now. Please call the office.']); return; }
+  now = new Date(page.now);
+  today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  $('trust').textContent = page.name;
+  document.title = `Book · ${page.name}`;
+  $('lookup').hidden = false;
+  if (!page.services.length) { status('warn', 'Nothing to book online yet', ['Please call the office.']); return; }
+  $('status').hidden = true;
+  $('form').hidden = false;
+  for (const s of page.services) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'service'; b.dataset.id = s.id;
+    const t = document.createElement('b'); t.textContent = s.name;
+    const p = document.createElement('small'); p.textContent = s.price == null ? 'Any amount' : rupees(s.price);
+    b.append(t, p);
+    b.onclick = () => pick(s);
+    $('services').append(b);
+  }
+  if (page.services.length === 1) pick(page.services[0]);
+}
+
+$('date').onchange = refresh;
+$('minus').onclick = () => { if (qty > 1) { qty--; refresh(); } };
+$('plus').onclick = () => { if (qty < 20) { qty++; refresh(); } };
+$('copyUpi').onclick = async () => {
+  try { await navigator.clipboard.writeText(page.upi_id); $('copyUpi').textContent = 'Copied'; } catch (_) {}
+};
+
+$('form').onsubmit = async (ev) => {
+  ev.preventDefault();
+  const err = $('error');
+  err.textContent = '';
+  const name = $('name').value.trim(), phone = $('phone').value.replace(/\D/g, ''), ref = $('ref').value.trim();
+  if (!service) return (err.textContent = 'Choose what to book.');
+  if (!name) return (err.textContent = 'Type your name.');
+  if (phone.length < 10 || phone.length > 13) return (err.textContent = 'Type your phone number.');
+  if (service.price != null && (ref.length < 6 || ref.length > 40)) return (err.textContent = 'Type the UPI reference number of your payment.');
+  $('book').disabled = true; $('book').textContent = 'Booking…';
+  try {
+    const r = await rpc('public_book', {
+      p_token: token, p_service: service.id, p_date: $('date').value, p_name: name,
+      p_phone: phone, p_qty: qty, p_upi_ref: ref || null, p_note: $('note').value.trim() || null,
+    });
+    $('form').hidden = true;
+    $('doneText').textContent = `${r.service}${qty > 1 ? ' × ' + qty : ''} on ${nice(r.for_date)}${r.amount > 0 ? ' · ' + rupees(r.amount) : ''}`;
+    $('code').textContent = r.code;
+    $('done').hidden = false;
+    window.scrollTo(0, 0);
+  } catch (e) {
+    err.textContent = e.server ? e.message : 'Could not book. Check your internet and try again.';
+  }
+  $('book').textContent = 'Book';
+  refresh();
+};
+
+$('again').onclick = () => {
+  $('done').hidden = true; $('form').hidden = false;
+  $('ref').value = ''; $('note').value = '';
+  refresh();
+};
+
+const said = { waiting: 'Waiting for the office to check your payment', confirmed: 'Confirmed', done: 'Done', cancelled: 'Cancelled' };
+$('lookupBtn').onclick = async () => {
+  const out = $('lookupResult');
+  const code = $('lookupCode').value.trim().toUpperCase();
+  if (!/^[0-9A-F]{6}$/.test(code)) { out.textContent = 'Type the 6-letter code from your booking.'; return; }
+  try {
+    const r = await rpc('public_booking_status', { p_token: token, p_code: code });
+    out.textContent = r ? `${r.service}${r.qty > 1 ? ' × ' + r.qty : ''} on ${nice(r.for_date)} for ${r.name}: ${said[r.status] || r.status}.` : 'No booking with this code.';
+  } catch (e) { out.textContent = 'Could not check. Try again.'; }
+};
+
+load();
+</script>
+</body>
+</html>
