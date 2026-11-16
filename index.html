@@ -6,7 +6,9 @@
 <title>Check a receipt · Thrasu Books</title>
 <!-- The page a receipt's QR code opens. Anyone can check a receipt without
      signing in; it calls verify_receipt, answer_receipt and report_problem
-     (migration 0018) with the app's publishable key. Source: public/check.html in the app. -->
+     (migration 0018) with the app's publishable key. Online at
+     https://anandvijayan732-a11y.github.io/thrasu-check/ (GitHub repository
+     anandvijayan732-a11y/thrasu-check, index.html); update it there too. -->
 <style>
   :root { --page:#F7F8F5; --card:#fff; --ink:#173404; --muted:#6B7261; --green:#3B6D11; --inBg:#EAF3DE; --inFg:#27500A; --outBg:#FCEBEB; --outFg:#791F1F; --line:#E3E6DC; }
   @media (prefers-color-scheme: dark) { :root { --page:#111410; --card:#1B1F18; --ink:#E6EEDC; --muted:#A2AA97; --green:#7DB33F; --inBg:#223318; --inFg:#AFD885; --outBg:#3A1C1C; --outFg:#F2A3A3; --line:#2F362A; } }
@@ -24,12 +26,29 @@
   textarea, input { font:inherit; width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; margin-top:8px; background:var(--card); color:var(--ink); }
   .muted { color:var(--muted); font-size:14px; }
   [hidden] { display:none !important; }
+  /* The exact receipt, as printed, with a VERIFIED stamp (migration 0054). */
+  .paper { position:relative; background:#fff; color:#222; border-radius:12px; padding:18px 16px; margin-top:14px; box-shadow:0 2px 12px rgba(0,0,0,.18); font-size:14px; overflow:hidden; }
+  .paper h2 { margin:0; text-align:center; color:#1F6B4A; font-size:18px; }
+  .paper .sub { text-align:center; color:#666; font-size:12px; line-height:1.4; }
+  .paper hr { border:0; border-top:1.5px solid #1F6B4A; margin:10px 0; }
+  .paper .top { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+  .paper .top b { font-size:16px; }
+  .paper .no { text-align:right; font-size:13px; }
+  .paper .row { display:flex; gap:12px; padding:4px 0; }
+  .paper .row span:first-child { color:#777; min-width:96px; }
+  .paper table { width:100%; border-collapse:collapse; margin:8px 0; font-size:13px; }
+  .paper th { background:#EEE; text-align:left; padding:5px; }
+  .paper td { padding:5px; border-bottom:1px solid #E5E5E5; }
+  .paper .r { text-align:right; }
+  .paper .total td { font-weight:700; border-bottom:0; }
+  .stamp { position:absolute; left:50%; top:52%; transform:translate(-50%,-50%) rotate(-13deg); border:3.5px solid #1F6B4A; color:#1F6B4A; border-radius:10px; padding:4px 14px; font-weight:900; font-size:26px; letter-spacing:1.5px; opacity:.75; background:rgba(255,255,255,.35); pointer-events:none; white-space:nowrap; }
 </style>
 </head>
 <body>
 <header><h1>Check a receipt</h1><div style="opacity:.8;font-size:13px">Thrasu Books</div></header>
 <main>
   <div id="status" class="card muted">Checking…</div>
+  <div id="paper" class="paper" hidden></div>
   <div id="ask" class="card" hidden>
     <div>Did you get this receipt for this amount?</div>
     <button class="primary" id="yes">Yes, this is right</button>
@@ -72,8 +91,82 @@ function show(ok, title, lines) {
   for (const l of lines) { const d = document.createElement('div'); d.textContent = l; s.append(d); }
 }
 
+const dateText = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+const money = (n) => Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+const modes = { cash: 'Cash', upi: 'UPI', bank: 'Bank', cheque: 'Cheque', credit: 'Credit' };
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+// Draws the exact receipt from receipt_by_token, the same details as the
+// printed one, with a VERIFIED stamp on it.
+function drawReceipt(c) {
+  const v = c.voucher, p = c.profile || {};
+  const entries = v.voucher_entries || [];
+  const isMoney = (e) => e.ledgers && (e.ledgers.is_bank || ['Cash-in-Hand', 'Credit Cards'].includes((e.ledgers.account_groups || {}).name));
+  const total = entries.reduce((s, e) => s + Number(e.debit || 0), 0);
+  const towards = [...new Set(entries.filter((e) => Number(e.credit) > 0 && !isMoney(e)).map((e) => e.ledgers.name))].join(', ');
+  const box = $('paper');
+  box.replaceChildren();
+  box.append(el('h2', null, c.trust));
+  const sub = [p.address, p.phone ? 'Phone ' + p.phone : null, [p.reg_no ? 'Reg. No. ' + p.reg_no : null, p.pan ? 'PAN ' + p.pan : null].filter(Boolean).join(' · ')].filter(Boolean);
+  for (const s of sub) box.append(el('div', 'sub', s));
+  box.append(el('hr'));
+  const top = el('div', 'top');
+  top.append(el('b', null, v.voucher_type === 'receipt' ? 'Receipt' : 'Voucher'));
+  const no = el('div', 'no');
+  no.append(el('div', null, 'No. ' + (v.doc_no || '—')), el('div', null, 'Date: ' + dateText(v.voucher_date)));
+  top.append(no);
+  box.append(top);
+  const row = (a, b) => { const r = el('div', 'row'); r.append(el('span', null, a), el('span', null, b)); box.append(r); };
+  row('Received from', v.party_name || '—');
+  const lines = c.lines || [];
+  if (lines.length) {
+    const t = el('table');
+    const h = el('tr');
+    for (const [txt, cls] of [['Item'], ['For'], ['Qty', 'r'], ['Rate', 'r'], ['Amount', 'r']]) h.append(el('th', cls, txt));
+    t.append(h);
+    let qty = 0;
+    for (const l of lines) {
+      qty += Number(l.qty);
+      const r = el('tr');
+      r.append(el('td', null, l.name), el('td', null, [l.person, l.star].filter(Boolean).join(' · ')),
+        el('td', 'r', l.qty), el('td', 'r', money(l.rate)), el('td', 'r', money(l.qty * l.rate)));
+      t.append(r);
+    }
+    const f = el('tr', 'total');
+    f.append(el('td', null, 'Total'), el('td'), el('td', 'r', qty), el('td'), el('td', 'r', rupees(total)));
+    t.append(f);
+    box.append(t);
+  } else {
+    row('Amount', rupees(total));
+  }
+  if (towards) row('Towards', towards);
+  if (c.festival) row('Festival', c.festival);
+  row('Paid by', modes[v.pay_mode] || 'Cash');
+  if (v.is_80g && v.pan) row('Donor PAN', v.pan);
+  if (v.narration) row('Note', v.narration);
+  box.append(el('div', 'stamp', '✓ VERIFIED'));
+  box.hidden = false;
+}
+
 async function check() {
   if (!/^[0-9a-f]{32}$/.test(token)) { show(false, 'Not a receipt code', ['Scan the QR code printed on the receipt.']); $('report').hidden = true; return; }
+  // The full receipt (migration 0054); the short answer below if that fails.
+  try {
+    const c = await rpc('receipt_by_token', { p_token: token });
+    if (c.result === 'found' && c.voucher) {
+      show(true, 'Genuine receipt', [`This is the exact receipt in ${c.trust}'s books`]);
+      drawReceipt(c);
+      if (c.voucher.voucher_type === 'receipt') $('ask').hidden = false;
+      return;
+    }
+    if (c.result === 'not_found') { show(false, 'Not in the books', ['This receipt is not in any trust\'s books. It may be fake.']); return; }
+  } catch (e) { /* use the short check */ }
   try {
     const rows = await rpc('verify_receipt', { p_token: token });
     const r = rows[0];
